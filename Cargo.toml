@@ -1,0 +1,28 @@
+[package]
+name = "ado-artifacts"
+version = "0.1.0"
+edition = "2024"
+authors = ["Marius Storm-Olsen"]
+description = "Extremely fast, parallel, hash-verified downloader for Azure DevOps pipeline artifacts"
+license = "MIT"
+readme = "README.md"
+include = ["src/**/*.rs", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+keywords = ["azure-devops", "artifacts", "download", "pipelines", "cli"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+bytes = "1.12.1"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+flate2 = "1.1.10"
+futures-util = "0.3.34"
+libc = "0.2.190"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
+serde = "1.0.229"
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "signal", "process", "sync", "time", "net"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
