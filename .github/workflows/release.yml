@@ -1,0 +1,119 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds, tests and publishes a GitHub release with binaries for
+# Linux (x86_64, arm64) and macOS (Intel, Apple Silicon). Running the workflow manually builds and
+# tests everything and keeps the archives as workflow artifacts, without publishing a release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds use musl: fully static binaries that run on any distribution.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+            native: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            native: true
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            native: true
+          # Cross-compiled on the Apple Silicon runner.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            native: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+          rustup default stable
+
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Test
+        if: matrix.native
+        run: cargo test --release --locked --target ${{ matrix.target }}
+
+      - name: Build
+        # Keep local paths (runner home, checkout directory) out of the binary; the later, more
+        # specific mapping wins for paths inside the checkout.
+        shell: bash
+        run: |
+          export RUSTFLAGS="--remap-path-prefix=$HOME=~ --remap-path-prefix=$GITHUB_WORKSPACE=."
+          cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Check binary
+        shell: bash
+        run: |
+          bin=target/${{ matrix.target }}/release/ado-artifacts
+          file "$bin"
+          if [ "${{ matrix.native }}" = "true" ]; then "$bin" --version; fi
+
+      - name: Package
+        id: package
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then version="${GITHUB_REF_NAME}"; else version="dev-${GITHUB_SHA::7}"; fi
+          name="ado-artifacts-${version}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/ado-artifacts" README.md LICENSE "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the crate version
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${version} (expected v${version})"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat dist/*.sha256 > dist/SHA256SUMS
+          gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz dist/SHA256SUMS \
+            --title "ado-artifacts ${GITHUB_REF_NAME}" --generate-notes --verify-tag

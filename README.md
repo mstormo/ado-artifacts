@@ -86,6 +86,29 @@ error stops all work and exits 1.
 
 ## Install
 
+### Prebuilt binaries
+
+Each [release](https://github.com/mstormo/ado-artifacts/releases) has archives for:
+
+| Platform                | Archive suffix                   |
+| ----------------------- | -------------------------------- |
+| Linux x86_64 (static)   | `x86_64-unknown-linux-musl`      |
+| Linux arm64 (static)    | `aarch64-unknown-linux-musl`     |
+| macOS Apple Silicon     | `aarch64-apple-darwin`           |
+| macOS Intel             | `x86_64-apple-darwin`            |
+
+Download the archive for your platform, check it against `SHA256SUMS`, and put the binary on your `PATH`, e.g.:
+
+```
+tar -xzf ado-artifacts-v0.1.0-aarch64-apple-darwin.tar.gz
+install -m 755 ado-artifacts-v0.1.0-aarch64-apple-darwin/ado-artifacts ~/.local/bin/
+```
+
+The macOS binaries are not signed: if macOS refuses to run one downloaded with a browser, remove the quarantine flag
+with `xattr -d com.apple.quarantine ~/.local/bin/ado-artifacts`.
+
+### From source
+
 You need a Rust toolchain (install it with [rustup](https://rustup.rs) if `cargo` is not available). From a
 checkout of this repository:
 
